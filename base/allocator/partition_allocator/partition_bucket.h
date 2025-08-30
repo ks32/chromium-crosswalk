@@ -50,7 +50,12 @@ struct PartitionBucket {
   ALWAYS_INLINE size_t get_bytes_per_span() const {
     // TODO(ajwong): Change to CheckedMul. https://crbug.com/787153
     // https://crbug.com/680657
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+    // For Linux ARM64, we need to handle runtime page size
+    return num_system_pages_per_slot_span * base::SystemPageSize();
+#else
     return num_system_pages_per_slot_span * kSystemPageSize;
+#endif
   }
   ALWAYS_INLINE uint16_t get_slots_per_span() const {
     // TODO(ajwong): Change to CheckedMul. https://crbug.com/787153
@@ -62,8 +67,17 @@ struct PartitionBucket {
     // Caller must check that the size is not above the kGenericMaxDirectMapped
     // limit before calling. This also guards against integer overflow in the
     // calculation here.
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+    DCHECK(size <= kGenericMaxDirectMapped());
+#else
     DCHECK(size <= kGenericMaxDirectMapped);
+#endif
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+    // For Linux ARM64, we need to handle runtime page size
+    return (size + base::SystemPageOffsetMask()) & base::SystemPageBaseMask();
+#else
     return (size + kSystemPageOffsetMask) & kSystemPageBaseMask;
+#endif
   }
 
   // TODO(ajwong): Can this be made private?  https://crbug.com/787153

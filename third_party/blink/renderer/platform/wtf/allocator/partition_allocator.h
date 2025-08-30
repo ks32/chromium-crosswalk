@@ -29,7 +29,11 @@ class WTF_EXPORT PartitionAllocator {
 
   template <typename T>
   static size_t MaxElementCountInBackingStore() {
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+    return base::kGenericMaxDirectMapped() / sizeof(T);
+#else
     return base::kGenericMaxDirectMapped / sizeof(T);
+#endif
   }
 
   template <typename T>

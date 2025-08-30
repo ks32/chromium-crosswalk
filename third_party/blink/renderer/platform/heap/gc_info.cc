@@ -18,10 +18,34 @@ constexpr size_t kEntrySize = sizeof(GCInfo*);
 static_assert(base::bits::IsPowerOfTwo(kEntrySize),
               "GCInfoTable entries size must be power of "
               "two");
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+// For Linux ARM64, we need to check this at runtime since page sizes are dynamic
+// This will be checked in the initialization code
+#else
 static_assert(
     0 == base::kPageAllocationGranularity % base::kSystemPageSize,
     "System page size must be a multiple of page page allocation granularity");
+#endif
 
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+// For Linux ARM64, we need to handle runtime page size
+size_t ComputeInitialTableLimit() {
+  // (Light) experimentation suggests that Blink doesn't need more than this
+  // while handling content on popular web properties.
+  constexpr size_t kInitialWantedLimit = 512;
+
+  // Different OSes have different page sizes, so we have to choose the minimum
+  // of memory wanted and OS page size.
+  constexpr size_t memory_wanted = kInitialWantedLimit * kEntrySize;
+  return base::RoundUpToPageAllocationGranularity(memory_wanted) / kEntrySize;
+}
+
+size_t MaxTableSize() {
+  size_t kMaxTableSize = base::RoundUpToPageAllocationGranularity(
+      GCInfoTable::kMaxIndex * kEntrySize);
+  return kMaxTableSize;
+}
+#else
 constexpr size_t ComputeInitialTableLimit() {
   // (Light) experimentation suggests that Blink doesn't need more than this
   // while handling content on popular web properties.
@@ -38,6 +62,7 @@ constexpr size_t MaxTableSize() {
       GCInfoTable::kMaxIndex * kEntrySize);
   return kMaxTableSize;
 }
+#endif
 
 }  // namespace
 
@@ -82,7 +107,12 @@ void GCInfoTable::Resize() {
   const size_t old_committed_size = limit_ * kEntrySize;
   const size_t new_committed_size = new_limit * kEntrySize;
   CHECK(table_);
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+  // For Linux ARM64, we need to handle runtime page size
+  CHECK_EQ(0u, new_committed_size % base::PageAllocationGranularity());
+#else
   CHECK_EQ(0u, new_committed_size % base::kPageAllocationGranularity);
+#endif
   CHECK_GE(MaxTableSize(), limit_ * kEntrySize);
 
   // Recommitting and zapping assumes byte-addressable storage.
@@ -111,9 +141,21 @@ void GCInfoTable::Resize() {
 
 GCInfoTable::GCInfoTable() {
   CHECK(!table_);
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+  // For Linux ARM64, check runtime page size constraints
+  CHECK_EQ(0u, base::PageAllocationGranularity() % base::SystemPageSize())
+      << "System page size must be a multiple of page allocation granularity for ARM64";
+#endif
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+  // For Linux ARM64, we need to handle runtime page size
+  table_ = reinterpret_cast<GCInfo const**>(base::AllocPages(
+      nullptr, MaxTableSize(), base::PageAllocationGranularity(),
+      base::PageInaccessible));
+#else
   table_ = reinterpret_cast<GCInfo const**>(base::AllocPages(
       nullptr, MaxTableSize(), base::kPageAllocationGranularity,
       base::PageInaccessible));
+#endif
   CHECK(table_);
   Resize();
 }

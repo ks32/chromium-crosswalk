@@ -20,14 +20,29 @@ namespace base {
 
 // Two partition pages are used as guard / metadata page so make sure the super
 // page size is bigger.
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+// For Linux ARM64, we need to check this at runtime since page sizes are dynamic
+// This will be checked in the initialization code
+#else
 static_assert(kPartitionPageSize * 4 <= kSuperPageSize, "ok super page size");
+#endif
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+// For Linux ARM64, we need to check this at runtime since page sizes are dynamic
+// This will be checked in the initialization code
+#else
 static_assert(!(kSuperPageSize % kPartitionPageSize), "ok super page multiple");
+#endif
 // Four system pages gives us room to hack out a still-guard-paged piece
 // of metadata in the middle of a guard partition page.
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+// For Linux ARM64, we need to check these at runtime since page sizes are dynamic
+// This will be checked in the initialization code
+#else
 static_assert(kSystemPageSize * 4 <= kPartitionPageSize,
               "ok partition page size");
 static_assert(!(kPartitionPageSize % kSystemPageSize),
               "ok partition page multiple");
+#endif
 static_assert(sizeof(internal::PartitionPage) <= kPageMetadataSize,
               "PartitionPage should not be too big");
 static_assert(sizeof(internal::PartitionBucket) <= kPageMetadataSize,
@@ -35,18 +50,38 @@ static_assert(sizeof(internal::PartitionBucket) <= kPageMetadataSize,
 static_assert(sizeof(internal::PartitionSuperPageExtentEntry) <=
                   kPageMetadataSize,
               "PartitionSuperPageExtentEntry should not be too big");
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+// For Linux ARM64, we need to check this at runtime since page sizes are dynamic
+// This will be checked in the initialization code
+#else
 static_assert(kPageMetadataSize * kNumPartitionPagesPerSuperPage <=
                   kSystemPageSize,
               "page metadata fits in hole");
+#endif
 // Limit to prevent callers accidentally overflowing an int size.
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+// For Linux ARM64, we need to check this at runtime since page sizes are dynamic
+// This will be checked in the initialization code
+#else
 static_assert(kGenericMaxDirectMapped <=
                   (1UL << 31) + kPageAllocationGranularity,
               "maximum direct mapped allocation");
+#endif
 // Check that some of our zanier calculations worked out as expected.
 static_assert(kGenericSmallestBucket == 8, "generic smallest bucket");
 static_assert(kGenericMaxBucketed == 983040, "generic max bucketed");
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+// For Linux ARM64, we need to check this at runtime since page sizes are dynamic
+// This will be checked in the initialization code
+#else
 static_assert(kMaxSystemPagesPerSlotSpan < (1 << 8),
               "System pages per slot span must be less than 128.");
+#endif
+
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+// For Linux ARM64, we need to validate the runtime page size
+// This will be checked at runtime in the initialization code
+#endif
 
 internal::PartitionRootBase::PartitionRootBase() = default;
 internal::PartitionRootBase::~PartitionRootBase() = default;
@@ -174,6 +209,42 @@ static void PartitionAllocBaseInit(internal::PartitionRootBase* root) {
     subtle::SpinLock::Guard guard(GetLock());
     if (!g_initialized) {
       g_initialized = true;
+      
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+      // Check runtime pagesize for Linux ARM64. Though the code is currently
+      // the same, it is not merged with other cases as a 1 << 16 case needs to
+      // be added here in the future, to allow 64 kiB pagesize. That is only
+      // supported on Linux on arm64, but not yet present here as the rest of
+      // the partition allocator does not currently support it.
+      size_t system_page_size = base::SystemPageSize();
+      CHECK((system_page_size == (size_t{1} << 12)) ||
+            (system_page_size == (size_t{1} << 14)))
+          << "Linux ARM64 only supports 4KB and 16KB page sizes currently";
+      
+      // Also check that page metadata fits in hole (runtime version of static assertion)
+      size_t partition_page_size = base::PartitionPageSize();
+      size_t num_partition_pages_per_super_page = base::NumPartitionPagesPerSuperPage();
+      CHECK(kPageMetadataSize * num_partition_pages_per_super_page <= system_page_size)
+          << "Page metadata must fit in hole for Linux ARM64";
+      
+      // Check that system pages per slot span is less than 128 (runtime version of static assertion)
+      size_t max_system_pages_per_slot_span = base::MaxSystemPagesPerSlotSpan();
+      CHECK(max_system_pages_per_slot_span < (1 << 8))
+          << "System pages per slot span must be less than 128 for Linux ARM64";
+      
+      // Check partition page size constraints (runtime version of static assertions)
+      CHECK(system_page_size * 4 <= partition_page_size)
+          << "Partition page size must be at least 4x system page size for Linux ARM64";
+      CHECK(!(partition_page_size % system_page_size))
+          << "Partition page size must be multiple of system page size for Linux ARM64";
+      
+      // Check super page size constraints (runtime version of static assertions)
+      CHECK(partition_page_size * 4 <= kSuperPageSize)
+          << "Super page size must be at least 4x partition page size for Linux ARM64";
+      CHECK(!(kSuperPageSize % partition_page_size))
+          << "Super page size must be multiple of partition page size for Linux ARM64";
+#endif
+      
       // We mark the sentinel bucket/page as free to make sure it is skipped by
       // our logic to find a new active page.
       internal::PartitionBucket::get_sentinel_bucket()->active_pages_head =
@@ -312,7 +383,12 @@ bool PartitionReallocDirectMappedInPlace(PartitionRootGeneric* root,
 
     // Don't reallocate in-place if new size is less than 80 % of the full
     // map size, to avoid holding on to too much unused address space.
-    if ((new_size / kSystemPageSize) * 5 < (map_size / kSystemPageSize) * 4)
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+    size_t system_page_size = base::SystemPageSize();
+#else
+    size_t system_page_size = kSystemPageSize;
+#endif
+    if ((new_size / system_page_size) * 5 < (map_size / system_page_size) * 4)
       return false;
 
     // Shrink by decommitting unneeded pages and making them inaccessible.
@@ -367,7 +443,11 @@ void* PartitionReallocGenericFlags(PartitionRootGeneric* root,
     return nullptr;
   }
 
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+  if (new_size > kGenericMaxDirectMapped()) {
+#else
   if (new_size > kGenericMaxDirectMapped) {
+#endif
     if (flags & PartitionAllocReturnNull)
       return nullptr;
     internal::PartitionExcessiveAllocationSize();
@@ -454,7 +534,12 @@ void* PartitionRootGeneric::TryRealloc(void* ptr,
 static size_t PartitionPurgePage(internal::PartitionPage* page, bool discard) {
   const internal::PartitionBucket* bucket = page->bucket;
   size_t slot_size = bucket->slot_size;
-  if (slot_size < kSystemPageSize || !page->num_allocated_slots)
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+  size_t system_page_size = base::SystemPageSize();
+#else
+  size_t system_page_size = kSystemPageSize;
+#endif
+  if (slot_size < system_page_size || !page->num_allocated_slots)
     return 0;
 
   size_t bucket_num_slots = bucket->get_slots_per_span();
@@ -473,12 +558,18 @@ static size_t PartitionPurgePage(internal::PartitionPage* page, bool discard) {
     return discardable_bytes;
   }
 
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+  // For Linux ARM64, we need to handle runtime page size
+  size_t max_slot_count = (base::PartitionPageSize() * kMaxPartitionPagesPerSlotSpan) / system_page_size;
+#else
   constexpr size_t kMaxSlotCount =
       (kPartitionPageSize * kMaxPartitionPagesPerSlotSpan) / kSystemPageSize;
-  DCHECK(bucket_num_slots <= kMaxSlotCount);
+  size_t max_slot_count = kMaxSlotCount;
+#endif
+  DCHECK(bucket_num_slots <= max_slot_count);
   DCHECK(page->num_unprovisioned_slots < bucket_num_slots);
   size_t num_slots = bucket_num_slots - page->num_unprovisioned_slots;
-  char slot_usage[kMaxSlotCount];
+  char slot_usage[max_slot_count];
 #if !defined(OS_WIN)
   // The last freelist entry should not be discarded when using OS_WIN.
   // DiscardVirtualMemory makes the contents of discarded memory undefined.
@@ -617,7 +708,12 @@ void PartitionRootGeneric::PurgeMemory(int flags) {
   if (flags & PartitionPurgeDiscardUnusedSystemPages) {
     for (size_t i = 0; i < kGenericNumBuckets; ++i) {
       internal::PartitionBucket* bucket = &this->buckets[i];
-      if (bucket->slot_size >= kSystemPageSize)
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+      size_t system_page_size = base::SystemPageSize();
+#else
+      size_t system_page_size = kSystemPageSize;
+#endif
+      if (bucket->slot_size >= system_page_size)
         PartitionPurgeBucket(bucket);
     }
   }

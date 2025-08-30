@@ -39,12 +39,41 @@ static const size_t kBucketShift = (kAllocationGranularity == 8) ? 3 : 2;
 static const size_t kPartitionPageShift = 16;  // 64 KiB
 #elif defined(ARCH_CPU_PPC64)
 static const size_t kPartitionPageShift = 18;  // 256 KiB
+#elif (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+// For Linux ARM64, we need to handle runtime page size
+// PartitionPageSize() is always SystemPageSize() << 2, so regardless of
+// what the run time page size is, we can use this expression.
+static const size_t kPartitionPageShift = 14;  // Will be overridden for runtime
 #else
 static const size_t kPartitionPageShift = 14;  // 16 KiB
 #endif
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+// For Linux ARM64, we need to handle runtime page size
+inline size_t PartitionPageSize() {
+  return base::SystemPageSize() << 2;  // Always 4x system page size
+}
+
+inline size_t PartitionPageShift() {
+  return base::SystemPageShift() + 2;  // Always system page shift + 2
+}
+
+inline size_t PartitionPageOffsetMask() {
+  return PartitionPageSize() - 1;
+}
+
+inline size_t PartitionPageBaseMask() {
+  return ~PartitionPageOffsetMask();
+}
+
+// Constants not defined for ARM64 - use runtime functions instead
+// kPartitionPageSize -> PartitionPageSize()
+// kPartitionPageOffsetMask -> PartitionPageOffsetMask()
+// kPartitionPageBaseMask -> PartitionPageBaseMask()
+#else
 static const size_t kPartitionPageSize = 1 << kPartitionPageShift;
 static const size_t kPartitionPageOffsetMask = kPartitionPageSize - 1;
 static const size_t kPartitionPageBaseMask = ~kPartitionPageOffsetMask;
+#endif
 // TODO: Should this be 1 if defined(_MIPS_ARCH_LOONGSON)?
 static const size_t kMaxPartitionPagesPerSlotSpan = 4;
 
@@ -55,10 +84,25 @@ static const size_t kMaxPartitionPagesPerSlotSpan = 4;
 // dirty a private page, which is very wasteful if we never actually store
 // objects there.
 
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+// For Linux ARM64, we need to handle runtime page size
+inline size_t NumSystemPagesPerPartitionPage() {
+  return PartitionPageSize() / base::SystemPageSize();
+}
+
+inline size_t MaxSystemPagesPerSlotSpan() {
+  return NumSystemPagesPerPartitionPage() * kMaxPartitionPagesPerSlotSpan;
+}
+
+// Constants not defined for ARM64 - use runtime functions instead
+// kNumSystemPagesPerPartitionPage -> NumSystemPagesPerPartitionPage()
+// kMaxSystemPagesPerSlotSpan -> MaxSystemPagesPerSlotSpan()
+#else
 static const size_t kNumSystemPagesPerPartitionPage =
     kPartitionPageSize / kSystemPageSize;
 static const size_t kMaxSystemPagesPerSlotSpan =
     kNumSystemPagesPerPartitionPage * kMaxPartitionPagesPerSlotSpan;
+#endif
 
 // We reserve virtual address space in 2 MiB chunks (aligned to 2 MiB as well).
 // These chunks are called *super pages*. We do this so that we can store
@@ -124,8 +168,17 @@ static const size_t kSuperPageShift = 21;  // 2 MiB
 static const size_t kSuperPageSize = 1 << kSuperPageShift;
 static const size_t kSuperPageOffsetMask = kSuperPageSize - 1;
 static const size_t kSuperPageBaseMask = ~kSuperPageOffsetMask;
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+// For Linux ARM64, we need to handle runtime page size
+inline size_t NumPartitionPagesPerSuperPage() {
+  return kSuperPageSize / PartitionPageSize();
+}
+
+static const size_t kNumPartitionPagesPerSuperPage = 0;  // Will use function instead
+#else
 static const size_t kNumPartitionPagesPerSuperPage =
     kSuperPageSize / kPartitionPageSize;
+#endif
 
 // The following kGeneric* constants apply to the generic variants of the API.
 // The "order" of an allocation is closely related to the power-of-1 size of the
@@ -157,8 +210,15 @@ static const size_t kGenericMaxBucketed =
     ((kGenericNumBucketsPerOrder - 1) * kGenericMaxBucketSpacing);
 // Limit when downsizing a direct mapping using `realloc`:
 static const size_t kGenericMinDirectMappedDownsize = kGenericMaxBucketed + 1;
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+// For Linux ARM64, we need to handle runtime page size
+inline size_t kGenericMaxDirectMapped() {
+  return (1UL << 31) + base::PageAllocationGranularity();  // 2 GiB plus 1 more page.
+}
+#else
 static const size_t kGenericMaxDirectMapped =
     (1UL << 31) + kPageAllocationGranularity;  // 2 GiB plus 1 more page.
+#endif
 static const size_t kBitsPerSizeT = sizeof(void*) * CHAR_BIT;
 
 // Constant for the memory reclaim logic.

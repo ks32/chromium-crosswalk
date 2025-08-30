@@ -22,12 +22,24 @@ BASE_EXPORT void* GetRandomPageBase();
 
 namespace internal {
 
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+// For Linux ARM64, we need to handle runtime page size
+inline uintptr_t AslrAddress(uintptr_t mask) {
+  return mask & base::PageAllocationGranularityBaseMask();
+}
+
+inline uintptr_t AslrMask(uintptr_t bits) {
+  return AslrAddress((1ULL << bits) - 1ULL);
+}
+#else
 constexpr uintptr_t AslrAddress(uintptr_t mask) {
   return mask & kPageAllocationGranularityBaseMask;
 }
+
 constexpr uintptr_t AslrMask(uintptr_t bits) {
   return AslrAddress((1ULL << bits) - 1ULL);
 }
+#endif
 
 // Turn off formatting, because the thicket of nested ifdefs below is
 // incomprehensible without indentation. It is also incomprehensible with
@@ -88,21 +100,17 @@ constexpr uintptr_t AslrMask(uintptr_t bits) {
 
     #elif defined(ARCH_CPU_ARM64)
 
-      #if defined(OS_ANDROID)
-
-      // Restrict the address range on Android to avoid a large performance
-      // regression in single-process WebViews. See https://crbug.com/837640.
-      constexpr uintptr_t kASLRMask = AslrMask(30);
-      constexpr uintptr_t kASLROffset = AslrAddress(0x20000000ULL);
-
-      #else
-
-      // ARM64 on Linux has 39-bit user space. Use 38 bits since kASLROffset
-      // could cause a carry.
-      constexpr uintptr_t kASLRMask = AslrMask(38);
-      constexpr uintptr_t kASLROffset = AslrAddress(0x1000000000ULL);
-
-      #endif
+      // Linux on arm64 can use 39, 42, 48, or 52-bit user space, depending on
+      // page size and number of levels of translation pages used. We use
+      // 39-bit as base as all setups should support this, lowered to 38-bit
+      // as ASLROffset() could cause a carry.
+      // For ARM64, these are runtime constants due to dynamic page sizes
+      __attribute__((used)) static uintptr_t kASLRMask() {
+        return AslrMask(38);
+      }
+      __attribute__((used)) static uintptr_t kASLROffset() {
+        return AslrAddress(0x1000000000ULL);
+      }
 
     #elif defined(ARCH_CPU_PPC64)
 

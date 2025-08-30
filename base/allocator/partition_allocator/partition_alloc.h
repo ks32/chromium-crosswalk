@@ -484,7 +484,11 @@ ALWAYS_INLINE size_t PartitionRootGeneric::ActualSize(size_t size) {
   internal::PartitionBucket* bucket = PartitionGenericSizeToBucket(this, size);
   if (LIKELY(!bucket->is_direct_mapped())) {
     size = bucket->slot_size;
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+  } else if (size > kGenericMaxDirectMapped()) {
+#else
   } else if (size > kGenericMaxDirectMapped) {
+#endif
     // Too large to allocate => return the size unchanged.
   } else {
     size = internal::PartitionBucket::get_direct_map_size(size);
