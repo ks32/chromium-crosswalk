@@ -837,8 +837,11 @@ deps = {
   'src/third_party/depot_tools':
     Var('chromium_git') + '/chromium/tools/depot_tools.git' + '@' + '3a98df0bdd49d64cb15a5dd0fbc6b43223856e7d',
 
-  'src/third_party/devtools-node-modules':
-    Var('chromium_git') + '/devtools/devtools-frontend' + '@' + Var('devtools_node_modules_revision'),
+  #'src/third_party/devtools-node-modules':
+  #  Var('chromium_git') + '/devtools/devtools-frontend' + '@' + Var('devtools_node_modules_revision'),
+   
+   'src/third_party/devtools-node-modules':
+    'https://github.com/ks32/devtools-node-modules.git',
 
   'src/third_party/dom_distiller_js/dist':
     Var('chromium_git') + '/chromium/dom-distiller/dist.git' + '@' + '3093c3e238768ab27ff756bd7563ccbb12129d9f',
