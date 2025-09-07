@@ -841,7 +841,7 @@ deps = {
   #  Var('chromium_git') + '/devtools/devtools-frontend' + '@' + Var('devtools_node_modules_revision'),
    
    'src/third_party/devtools-node-modules':
-    'https://github.com/ks32/devtools-node-modules.git',
+    'https://github.com/ks32/devtools-node-modules.git@08f835aae2a552cd8b449ec1be9d292cbacbfb8b',
 
   'src/third_party/dom_distiller_js/dist':
     Var('chromium_git') + '/chromium/dom-distiller/dist.git' + '@' + '3093c3e238768ab27ff756bd7563ccbb12129d9f',
