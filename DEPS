@@ -2709,19 +2709,19 @@ hooks = [
 
   # This is used to ensure that all network operations are properly
   # annotated so we can document what they're for.
-  {
-    'name': 'tools_traffic_annotation_linux',
-    'pattern': '.',
-    'condition': 'host_os == "linux" and checkout_traffic_annotation_tools',
-    'action': [ 'python',
-                'src/third_party/depot_tools/download_from_google_storage.py',
-                '--no_resume',
-                '--no_auth',
-                '--num_threads=4',
-                '--bucket', 'chromium-tools-traffic_annotation',
-                '-d', 'src/tools/traffic_annotation/bin/linux64',
-    ],
-  },
+  #{
+  #  'name': 'tools_traffic_annotation_linux',
+  #  'pattern': '.',
+  #  'condition': 'host_os == "linux" and checkout_traffic_annotation_tools',
+  #  'action': [ 'python',
+  #              'src/third_party/depot_tools/download_from_google_storage.py',
+  #              '--no_resume',
+  #              '--no_auth',
+  #              '--num_threads=4',
+  #              '--bucket', 'chromium-tools-traffic_annotation',
+  #              '-d', 'src/tools/traffic_annotation/bin/linux64',
+  #  ],
+  #},
 
 # This is used to ensure that all network operations are properly
 # annotated so we can document what they're for.
