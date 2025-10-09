@@ -120,7 +120,12 @@ ALWAYS_INLINE char* PartitionSuperPageToMetadataArea(char* ptr) {
   DCHECK(!(pointer_as_uint & kSuperPageOffsetMask));
   // The metadata area is exactly one system page (the guard page) into the
   // super page.
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+  // For Linux ARM64, we need to handle runtime page size
+  return reinterpret_cast<char*>(pointer_as_uint + base::SystemPageSize());
+#else
   return reinterpret_cast<char*>(pointer_as_uint + kSystemPageSize);
+#endif
 }
 
 ALWAYS_INLINE PartitionPage* PartitionPage::FromPointerNoAlignmentCheck(
@@ -128,12 +133,24 @@ ALWAYS_INLINE PartitionPage* PartitionPage::FromPointerNoAlignmentCheck(
   uintptr_t pointer_as_uint = reinterpret_cast<uintptr_t>(ptr);
   char* super_page_ptr =
       reinterpret_cast<char*>(pointer_as_uint & kSuperPageBaseMask);
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+  // For Linux ARM64, we need to handle runtime page size
+  size_t partition_page_shift = base::PartitionPageShift();
+  size_t num_partition_pages_per_super_page = base::NumPartitionPagesPerSuperPage();
+  uintptr_t partition_page_index =
+      (pointer_as_uint & kSuperPageOffsetMask) >> partition_page_shift;
+  // Index 0 is invalid because it is the metadata and guard area and
+  // the last index is invalid because it is a guard page.
+  DCHECK(partition_page_index);
+  DCHECK(partition_page_index < num_partition_pages_per_super_page - 1);
+#else
   uintptr_t partition_page_index =
       (pointer_as_uint & kSuperPageOffsetMask) >> kPartitionPageShift;
   // Index 0 is invalid because it is the metadata and guard area and
   // the last index is invalid because it is a guard page.
   DCHECK(partition_page_index);
   DCHECK(partition_page_index < kNumPartitionPagesPerSuperPage - 1);
+#endif
   PartitionPage* page = reinterpret_cast<PartitionPage*>(
       PartitionSuperPageToMetadataArea(super_page_ptr) +
       (partition_page_index << kPageMetadataShift));
@@ -153,20 +170,40 @@ ALWAYS_INLINE void* PartitionPage::ToPointer(const PartitionPage* page) {
 
   // A valid |page| must be past the first guard System page and within
   // the following metadata region.
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+  // For Linux ARM64, we need to handle runtime page size
+  size_t system_page_size = base::SystemPageSize();
+  size_t partition_page_shift = base::PartitionPageShift();
+  size_t num_partition_pages_per_super_page = base::NumPartitionPagesPerSuperPage();
+  DCHECK(super_page_offset > system_page_size);
+  // Must be less than total metadata region.
+  DCHECK(super_page_offset < system_page_size + (num_partition_pages_per_super_page *
+                                                kPageMetadataSize));
+  uintptr_t partition_page_index =
+      (super_page_offset - system_page_size) >> kPageMetadataShift;
+#else
   DCHECK(super_page_offset > kSystemPageSize);
   // Must be less than total metadata region.
   DCHECK(super_page_offset < kSystemPageSize + (kNumPartitionPagesPerSuperPage *
                                                 kPageMetadataSize));
   uintptr_t partition_page_index =
       (super_page_offset - kSystemPageSize) >> kPageMetadataShift;
+#endif
   // Index 0 is invalid because it is the superpage extent metadata and the
   // last index is invalid because the whole PartitionPage is set as guard
   // pages for the metadata region.
   DCHECK(partition_page_index);
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+  DCHECK(partition_page_index < num_partition_pages_per_super_page - 1);
+  uintptr_t super_page_base = (pointer_as_uint & kSuperPageBaseMask);
+  void* ret = reinterpret_cast<void*>(
+      super_page_base + (partition_page_index << partition_page_shift));
+#else
   DCHECK(partition_page_index < kNumPartitionPagesPerSuperPage - 1);
   uintptr_t super_page_base = (pointer_as_uint & kSuperPageBaseMask);
   void* ret = reinterpret_cast<void*>(
       super_page_base + (partition_page_index << kPartitionPageShift));
+#endif
   return ret;
 }
 
@@ -183,10 +220,20 @@ ALWAYS_INLINE const size_t* PartitionPage::get_raw_size_ptr() const {
   // For single-slot buckets which span more than one partition page, we
   // have some spare metadata space to store the raw allocation size. We
   // can use this to report better statistics.
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+  // For Linux ARM64, we need to handle runtime page size
+  size_t system_page_size = base::SystemPageSize();
+  size_t max_system_pages_per_slot_span = base::MaxSystemPagesPerSlotSpan();
+  if (bucket->slot_size <= max_system_pages_per_slot_span * system_page_size)
+    return nullptr;
+
+  DCHECK((bucket->slot_size % system_page_size) == 0);
+#else
   if (bucket->slot_size <= kMaxSystemPagesPerSlotSpan * kSystemPageSize)
     return nullptr;
 
   DCHECK((bucket->slot_size % kSystemPageSize) == 0);
+#endif
   DCHECK(bucket->is_direct_mapped() || bucket->get_slots_per_span() == 1);
 
   const PartitionPage* the_next_page = this + 1;

@@ -90,9 +90,15 @@ void* SystemAllocPages(void* hint,
                        PageAccessibilityConfiguration accessibility,
                        PageTag page_tag,
                        bool commit) {
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+  DCHECK(!(length & base::PageAllocationGranularityOffsetMask()));
+  DCHECK(!(reinterpret_cast<uintptr_t>(hint) &
+           base::PageAllocationGranularityOffsetMask()));
+#else
   DCHECK(!(length & kPageAllocationGranularityOffsetMask));
   DCHECK(!(reinterpret_cast<uintptr_t>(hint) &
            kPageAllocationGranularityOffsetMask));
+#endif
   DCHECK(commit || accessibility == PageInaccessible);
   return SystemAllocPagesInternal(hint, length, accessibility, page_tag,
                                   commit);
@@ -104,6 +110,15 @@ void* AllocPages(void* address,
                  PageAccessibilityConfiguration accessibility,
                  PageTag page_tag,
                  bool commit) {
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+  DCHECK(length >= base::PageAllocationGranularity());
+  DCHECK(!(length & base::PageAllocationGranularityOffsetMask()));
+  DCHECK(align >= base::PageAllocationGranularity());
+  // Alignment must be power of 2 for masking math to work.
+  DCHECK(base::bits::IsPowerOfTwo(align));
+  DCHECK(!(reinterpret_cast<uintptr_t>(address) &
+           base::PageAllocationGranularityOffsetMask()));
+#else
   DCHECK(length >= kPageAllocationGranularity);
   DCHECK(!(length & kPageAllocationGranularityOffsetMask));
   DCHECK(align >= kPageAllocationGranularity);
@@ -111,6 +126,7 @@ void* AllocPages(void* address,
   DCHECK(base::bits::IsPowerOfTwo(align));
   DCHECK(!(reinterpret_cast<uintptr_t>(address) &
            kPageAllocationGranularityOffsetMask));
+#endif
   uintptr_t align_offset_mask = align - 1;
   uintptr_t align_base_mask = ~align_offset_mask;
   DCHECK(!(reinterpret_cast<uintptr_t>(address) & align_offset_mask));
@@ -162,7 +178,11 @@ void* AllocPages(void* address,
   }
 
   // Make a larger allocation so we can force alignment.
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+  size_t try_length = length + (align - base::PageAllocationGranularity());
+#else
   size_t try_length = length + (align - kPageAllocationGranularity);
+#endif
   CHECK(try_length >= length);
   void* ret;
 
@@ -181,41 +201,67 @@ void* AllocPages(void* address,
 }
 
 void FreePages(void* address, size_t length) {
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+  DCHECK(!(reinterpret_cast<uintptr_t>(address) &
+           base::PageAllocationGranularityOffsetMask()));
+  DCHECK(!(length & base::PageAllocationGranularityOffsetMask()));
+#else
   DCHECK(!(reinterpret_cast<uintptr_t>(address) &
            kPageAllocationGranularityOffsetMask));
   DCHECK(!(length & kPageAllocationGranularityOffsetMask));
+#endif
   FreePagesInternal(address, length);
 }
 
 bool TrySetSystemPagesAccess(void* address,
                              size_t length,
                              PageAccessibilityConfiguration accessibility) {
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+  DCHECK(!(length & base::SystemPageOffsetMask()));
+#else
   DCHECK(!(length & kSystemPageOffsetMask));
+#endif
   return TrySetSystemPagesAccessInternal(address, length, accessibility);
 }
 
 void SetSystemPagesAccess(void* address,
                           size_t length,
                           PageAccessibilityConfiguration accessibility) {
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+  DCHECK(!(length & base::SystemPageOffsetMask()));
+#else
   DCHECK(!(length & kSystemPageOffsetMask));
+#endif
   SetSystemPagesAccessInternal(address, length, accessibility);
 }
 
 void DecommitSystemPages(void* address, size_t length) {
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+  DCHECK_EQ(0UL, length & base::SystemPageOffsetMask());
+#else
   DCHECK_EQ(0UL, length & kSystemPageOffsetMask);
+#endif
   DecommitSystemPagesInternal(address, length);
 }
 
 bool RecommitSystemPages(void* address,
                          size_t length,
                          PageAccessibilityConfiguration accessibility) {
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+  DCHECK_EQ(0UL, length & base::SystemPageOffsetMask());
+#else
   DCHECK_EQ(0UL, length & kSystemPageOffsetMask);
+#endif
   DCHECK_NE(PageInaccessible, accessibility);
   return RecommitSystemPagesInternal(address, length, accessibility);
 }
 
 void DiscardSystemPages(void* address, size_t length) {
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+  DCHECK_EQ(0UL, length & base::SystemPageOffsetMask());
+#else
   DCHECK_EQ(0UL, length & kSystemPageOffsetMask);
+#endif
   DiscardSystemPagesInternal(address, length);
 }
 
@@ -227,8 +273,13 @@ bool ReserveAddressSpace(size_t size) {
                                  PageTag::kChromium, false);
     if (mem != nullptr) {
       // We guarantee this alignment when reserving address space.
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+      DCHECK(!(reinterpret_cast<uintptr_t>(mem) &
+               base::PageAllocationGranularityOffsetMask()));
+#else
       DCHECK(!(reinterpret_cast<uintptr_t>(mem) &
                kPageAllocationGranularityOffsetMask));
+#endif
       s_reservation_address = mem;
       s_reservation_size = size;
       return true;

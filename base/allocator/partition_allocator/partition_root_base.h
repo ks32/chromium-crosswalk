@@ -161,10 +161,18 @@ ALWAYS_INLINE bool PartitionRootBase::IsValidPage(PartitionPage* page) {
 
 ALWAYS_INLINE PartitionRootBase* PartitionRootBase::FromPage(
     PartitionPage* page) {
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+  // For Linux ARM64, we need to handle runtime page size
+  PartitionSuperPageExtentEntry* extent_entry =
+      reinterpret_cast<PartitionSuperPageExtentEntry*>(
+          reinterpret_cast<uintptr_t>(page) & base::SystemPageBaseMask());
+  return extent_entry->root;
+#else
   PartitionSuperPageExtentEntry* extent_entry =
       reinterpret_cast<PartitionSuperPageExtentEntry*>(
           reinterpret_cast<uintptr_t>(page) & kSystemPageBaseMask);
   return extent_entry->root;
+#endif
 }
 
 ALWAYS_INLINE void PartitionRootBase::IncreaseCommittedPages(size_t len) {

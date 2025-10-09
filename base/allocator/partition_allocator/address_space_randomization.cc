@@ -98,12 +98,22 @@ void* GetRandomPageBase() {
   if (!windows_81) {
     random &= internal::kASLRMaskBefore8_10;
   } else {
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+    random &= internal::kASLRMask();
+    random += internal::kASLROffset();
+#else
     random &= internal::kASLRMask;
+    random += internal::kASLROffset;
+#endif
   }
-  random += internal::kASLROffset;
+#else
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+  random &= internal::kASLRMask();
+  random += internal::kASLROffset();
 #else
   random &= internal::kASLRMask;
   random += internal::kASLROffset;
+#endif
 #endif  // defined(OS_WIN) && !defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
 #else   // defined(ARCH_CPU_32_BITS)
 #if defined(OS_WIN)
@@ -117,11 +127,22 @@ void* GetRandomPageBase() {
   if (!is_wow64)
     return nullptr;
 #endif  // defined(OS_WIN)
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+  random &= internal::kASLRMask();
+  random += internal::kASLROffset();
+#else
   random &= internal::kASLRMask;
   random += internal::kASLROffset;
+#endif
 #endif  // defined(ARCH_CPU_32_BITS)
 
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+  // For Linux ARM64, we need to handle runtime page size
+  size_t page_allocation_granularity_offset_mask = base::PageAllocationGranularityOffsetMask();
+  DCHECK_EQ(0ULL, (random & page_allocation_granularity_offset_mask));
+#else
   DCHECK_EQ(0ULL, (random & kPageAllocationGranularityOffsetMask));
+#endif
   return reinterpret_cast<void*>(random);
 }
 

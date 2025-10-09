@@ -1779,7 +1779,12 @@ void NormalPage::TakeSnapshot(base::trace_event::MemoryAllocatorDump* page_dump,
 bool NormalPage::Contains(Address addr) {
   Address blink_page_start = RoundToBlinkPageStart(GetAddress());
   // Page is at aligned address plus guard page size.
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+  // For Linux ARM64, use actual system page size for proper alignment
+  DCHECK_EQ(blink_page_start, GetAddress() - base::SystemPageSize());
+#else
   DCHECK_EQ(blink_page_start, GetAddress() - kBlinkGuardPageSize);
+#endif
   return blink_page_start <= addr && addr < blink_page_start + kBlinkPageSize;
 }
 #endif

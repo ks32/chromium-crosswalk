@@ -144,6 +144,18 @@ BASE_EXPORT void DiscardSystemPages(void* address, size_t length);
 
 // Rounds up |address| to the next multiple of |kSystemPageSize|. Returns
 // 0 for an |address| of 0.
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+// For Linux ARM64, we need to handle runtime page size
+inline uintptr_t RoundUpToSystemPage(uintptr_t address) {
+  return (address + base::SystemPageOffsetMask()) & base::SystemPageBaseMask();
+}
+
+// Rounds down |address| to the previous multiple of |kSystemPageSize|. Returns
+// 0 for an |address| of 0.
+inline uintptr_t RoundDownToSystemPage(uintptr_t address) {
+  return address & base::SystemPageBaseMask();
+}
+#else
 constexpr ALWAYS_INLINE uintptr_t RoundUpToSystemPage(uintptr_t address) {
   return (address + kSystemPageOffsetMask) & kSystemPageBaseMask;
 }
@@ -153,9 +165,25 @@ constexpr ALWAYS_INLINE uintptr_t RoundUpToSystemPage(uintptr_t address) {
 constexpr ALWAYS_INLINE uintptr_t RoundDownToSystemPage(uintptr_t address) {
   return address & kSystemPageBaseMask;
 }
+#endif
 
 // Rounds up |address| to the next multiple of |kPageAllocationGranularity|.
 // Returns 0 for an |address| of 0.
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+// For Linux ARM64, we need to handle runtime page size
+inline uintptr_t
+RoundUpToPageAllocationGranularity(uintptr_t address) {
+  return (address + base::PageAllocationGranularityOffsetMask()) &
+         base::PageAllocationGranularityBaseMask();
+}
+
+// Rounds down |address| to the previous multiple of
+// |kPageAllocationGranularity|. Returns 0 for an |address| of 0.
+inline uintptr_t
+RoundDownToPageAllocationGranularity(uintptr_t address) {
+  return address & base::PageAllocationGranularityBaseMask();
+}
+#else
 constexpr ALWAYS_INLINE uintptr_t
 RoundUpToPageAllocationGranularity(uintptr_t address) {
   return (address + kPageAllocationGranularityOffsetMask) &
@@ -168,6 +196,7 @@ constexpr ALWAYS_INLINE uintptr_t
 RoundDownToPageAllocationGranularity(uintptr_t address) {
   return address & kPageAllocationGranularityBaseMask;
 }
+#endif
 
 // Reserves (at least) |size| bytes of address space, aligned to
 // |kPageAllocationGranularity|. This can be called early on to make it more

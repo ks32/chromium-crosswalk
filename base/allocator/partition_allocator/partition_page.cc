@@ -31,21 +31,36 @@ ALWAYS_INLINE void PartitionDirectUnmap(PartitionPage* page) {
     extent->next_extent->prev_extent = extent->prev_extent;
   }
 
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+  // For Linux ARM64, we need to handle runtime page size
+  size_t partition_page_size = PartitionPageSize();
+  size_t system_page_size = base::SystemPageSize();
+#else
+  size_t partition_page_size = kPartitionPageSize;
+  size_t system_page_size = kSystemPageSize;
+#endif
+
   // Add on the size of the trailing guard page and preceeding partition
   // page.
-  unmap_size += kPartitionPageSize + kSystemPageSize;
+  unmap_size += partition_page_size + system_page_size;
 
-  size_t uncommitted_page_size = page->bucket->slot_size + kSystemPageSize;
+  size_t uncommitted_page_size = page->bucket->slot_size + system_page_size;
   root->DecreaseCommittedPages(uncommitted_page_size);
   DCHECK(root->total_size_of_direct_mapped_pages >= uncommitted_page_size);
   root->total_size_of_direct_mapped_pages -= uncommitted_page_size;
 
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+  // For Linux ARM64, we need to handle runtime page size
+  size_t page_allocation_granularity_offset_mask = base::PageAllocationGranularityOffsetMask();
+  DCHECK(!(unmap_size & page_allocation_granularity_offset_mask));
+#else
   DCHECK(!(unmap_size & kPageAllocationGranularityOffsetMask));
+#endif
 
   char* ptr = reinterpret_cast<char*>(PartitionPage::ToPointer(page));
   // Account for the mapping starting a partition page before the actual
   // allocation address.
-  ptr -= kPartitionPageSize;
+  ptr -= partition_page_size;
 
   FreePages(ptr, unmap_size);
 }

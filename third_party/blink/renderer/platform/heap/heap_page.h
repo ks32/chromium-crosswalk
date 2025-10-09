@@ -78,6 +78,10 @@ constexpr size_t kBlinkPagesPerRegion = 10;
 // NaCl.
 // The same issue holds for ppc64 systems, which use a 64k page size.
 constexpr size_t kBlinkGuardPageSize = 0;
+#elif (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+// For Linux ARM64, we need to handle runtime page size since it's not a compile-time constant
+// We'll use the actual system page size to ensure proper alignment
+constexpr size_t kBlinkGuardPageSize = 0;  // Will be overridden at runtime with actual system page size
 #else
 constexpr size_t kBlinkGuardPageSize = base::kSystemPageSize;
 #endif
@@ -431,7 +435,12 @@ class FreeList {
 
 // Blink heap pages are set up with a guard page before and after the payload.
 inline size_t BlinkPagePayloadSize() {
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+  // For Linux ARM64, use actual system page size for proper alignment
+  return kBlinkPageSize - 2 * base::SystemPageSize();
+#else
   return kBlinkPageSize - 2 * kBlinkGuardPageSize;
+#endif
 }
 
 // Blink heap pages are aligned to the Blink heap page size. Therefore, the
@@ -463,8 +472,14 @@ inline bool VTableInitialized(void* object_pointer) {
 // Sanity check for a page header address: the address of the page header should
 // be 1 OS page size away from being Blink page size-aligned.
 inline bool IsPageHeaderAddress(Address address) {
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+  // For Linux ARM64, use actual system page size for proper alignment
+  return !((reinterpret_cast<uintptr_t>(address) & kBlinkPageOffsetMask) -
+           base::SystemPageSize());
+#else
   return !((reinterpret_cast<uintptr_t>(address) & kBlinkPageOffsetMask) -
            kBlinkGuardPageSize);
+#endif
 }
 
 #endif
@@ -1070,8 +1085,14 @@ class LargeObjectArena final : public BaseArena {
 // typed arenas. This is only exported to enable tests in HeapTest.cpp.
 PLATFORM_EXPORT ALWAYS_INLINE BasePage* PageFromObject(const void* object) {
   Address address = reinterpret_cast<Address>(const_cast<void*>(object));
+#if (defined(OS_LINUX) || defined(OS_ANDROID)) && defined(ARCH_CPU_ARM64)
+  // For Linux ARM64, use actual system page size for proper alignment
+  BasePage* page = reinterpret_cast<BasePage*>(BlinkPageAddress(address) +
+                                               base::SystemPageSize());
+#else
   BasePage* page = reinterpret_cast<BasePage*>(BlinkPageAddress(address) +
                                                kBlinkGuardPageSize);
+#endif
   // Page must have a valid magic.
   DCHECK(page->IsValid());
 #if DCHECK_IS_ON()
